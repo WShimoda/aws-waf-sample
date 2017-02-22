@@ -1,7 +1,7 @@
 '''
 Copyright 2016 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 Licensed under the Amazon Software License (the "License"). You may not use this file except in compliance with the License.
-A copy of the License is located at http://aws.amazon.com/asl/ or in the "license" file accompanying this file. 
+A copy of the License is located at http://aws.amazon.com/asl/ or in the "license" file accompanying this file.
 This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied.
 See the License for the specific language governing permissions and limitations under the License.
 '''
@@ -13,6 +13,7 @@ import gzip
 import datetime
 import time
 import math
+import os
 
 print('Loading function')
 
@@ -20,12 +21,12 @@ print('Loading function')
 # Constants
 #======================================================================================================================
 # Configurables
-OUTPUT_BUCKET = None
-IP_SET_ID_MANUAL_BLOCK = None
-IP_SET_ID_AUTO_BLOCK = None
+OUTPUT_BUCKET = os.environ['OUTPUT_BUCKET']
+IP_SET_ID_MANUAL_BLOCK = os.environ['IP_SET_ID_MANUAL_BLOCK']
+IP_SET_ID_AUTO_BLOCK = os.environ['IP_SET_ID_AUTO_BLOCK']
 
-BLACKLIST_BLOCK_PERIOD = None # in minutes
-REQUEST_PER_MINUTE_LIMIT = None
+BLACKLIST_BLOCK_PERIOD = int(os.environ['BLACKLIST_BLOCK_PERIOD']) # in minutes
+REQUEST_PER_MINUTE_LIMIT = int(os.environ['REQUEST_PER_MINUTE_LIMIT'])
 BLOCK_ERROR_CODES = ['400','403','404','405'] # error codes to parse logs for
 
 LIMIT_IP_ADDRESS_RANGES_PER_IP_MATCH_CONDITION = 1000
@@ -33,11 +34,13 @@ API_CALL_NUM_RETRIES = 3
 
 OUTPUT_FILE_NAME = 'current_outstanding_requesters.json'
 
+# ALB
+# http://docs.aws.amazon.com/ja_jp/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-log-file-format
+# type timestamp elb client:port target:port request_processing_time target_processing_time response_processing_time elb_status_code target_status_code received_bytes sent_bytes "request" "user_agent" ssl_cipher ssl_protocol target_group_arn trace_id
 LINE_FORMAT = {
-    'date': 0,
-    'time' : 1,
-    'source_ip' : 4,
-    'code' : 8
+    'datetime': 1,
+    'client_ip_port': 3,
+    'code': 9
 }
 
 #======================================================================================================================
@@ -70,8 +73,13 @@ def get_outstanding_requesters(bucket_name, key_name):
                     line_data = line.split('\t')
                     if line_data[LINE_FORMAT['code']] in BLOCK_ERROR_CODES:
                         request_key = line_data[LINE_FORMAT['date']]
-                        request_key += '-' + line_data[LINE_FORMAT['time']][:-3]
-                        request_key += '-' + line_data[LINE_FORMAT['source_ip']]
+                        date_time = line_data[LINE_FORMAT['datetime']]
+                        # 2017-02-22T03:33:21.735554Z
+                        list_date_time = date_time.split('T')
+                        request_key = list_date_time[LINE_FORMAT[0]]
+                        request_key += '-' + line_data[1][:-3]
+                        list_client_ip_port = line_data[LINE_FORMAT['client_ip_port']].split(':')
+                        request_key += '-' + line_data[LINE_FORMAT['client_ip_port']].split(':')[0]
                         if request_key in result.keys():
                             result[request_key] += 1
                         else:
